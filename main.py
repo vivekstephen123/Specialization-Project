@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
 from auth import signup_user, login_user
 from inventory import router as inventory_router
@@ -111,6 +111,25 @@ Respond in valid JSON format like:
     except json.JSONDecodeError:
         return {"error": "Invalid JSON returned by Gemini", "raw_response": response.text}
 
+def parse_inventory_changes(inventory_changes):
+    # If it's a string, try to parse as JSON (possibly double-encoded)
+    if isinstance(inventory_changes, str):
+        try:
+            inventory_changes = json.loads(inventory_changes)
+            if isinstance(inventory_changes, str):
+                inventory_changes = json.loads(inventory_changes)
+        except Exception as e:
+            print("JSON decode error:", e)
+            raise HTTPException(status_code=500, detail=f"Could not parse inventory changes: {str(e)}")
+    # If it's a dict, wrap in a list
+    if isinstance(inventory_changes, dict):
+        inventory_changes = [inventory_changes]
+    # Must be a list now
+    if not isinstance(inventory_changes, list):
+        print("inventory_changes is not a list:", inventory_changes)
+        raise HTTPException(status_code=500, detail="Inventory changes is not a list!")
+    return inventory_changes
+
 # Existing routes
 @app.post("/signup/")
 async def signup(request: SignupRequest):
@@ -143,18 +162,25 @@ async def login(request: LoginRequest):
 async def generate_recipe_endpoint(request: RecipeRequest):
     try:
         recipe = generate_recipe(request.user_id, request.meal_type)
+        print("RECIPE:", recipe)
         if "error" in recipe:
             raise HTTPException(status_code=400, detail=recipe["error"])
-        if "post meal inventory change" in recipe:
-            inventory_changes = recipe["post meal inventory change"]
-            if isinstance(inventory_changes, str):
-                inventory_changes = json.loads(inventory_changes)
+        if "post_meal_inventory_change" in recipe:
+            inventory_changes_raw = recipe["post_meal_inventory_change"]
+            print("RAW INVENTORY CHANGES:", inventory_changes_raw)
+            # If it's a dict with 'ingredients', extract the list
+            if isinstance(inventory_changes_raw, dict) and "ingredients" in inventory_changes_raw:
+                inventory_changes = inventory_changes_raw["ingredients"]
+            else:
+                inventory_changes = parse_inventory_changes(inventory_changes_raw)
+            print("PARSED INVENTORY CHANGES:", inventory_changes)
             update_ingredients_inventory(request.user_id, inventory_changes)
         return {
             "success": True,
             "recipe": recipe
         }
     except Exception as e:
+        print("ERROR:", e)
         raise HTTPException(status_code=500, detail=f"Failed to generate recipe: {str(e)}")
 
 # Optional: GET route for recipe generation (if you prefer GET with query params)
@@ -162,25 +188,29 @@ async def generate_recipe_endpoint(request: RecipeRequest):
 async def generate_recipe_get(user_id: str, meal_type: MealType = MealType.lunch):
     try:
         recipe = generate_recipe(user_id, meal_type)
-        
         if "error" in recipe:
             raise HTTPException(status_code=400, detail=recipe["error"])
-        
-        # Update inventory if recipe contains ingredients
-        if "ingredients" in recipe:
-            update_ingredients_inventory(user_id, recipe["ingredients"])
-        
-        # Update inventory based on post meal inventory change
-        if "post meal inventory change" in recipe:
-            inventory_changes = recipe["post meal inventory change"]
-            if isinstance(inventory_changes, str):
-                import json
-                inventory_changes = json.loads(inventory_changes)
+        if "post_meal_inventory_change" in recipe:
+            inventory_changes = parse_inventory_changes(recipe["post_meal_inventory_change"])
+            print("PARSED INVENTORY CHANGES:", inventory_changes)
             update_ingredients_inventory(user_id, inventory_changes)
-        
         return {
             "success": True,
             "recipe": recipe
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate recipe: {str(e)}")
+
+@app.post("/update-inventory/{user_id}")
+async def update_inventory_endpoint(user_id: str, inventory_changes: list = Body(...)):
+    """
+    Update the Ingredients Inventory for a user.
+    Expects a JSON body: [{"ingredient": "Carrot", "quantity": 2}, ...]
+    """
+    try:
+        print("Received inventory changes:", inventory_changes)
+        update_ingredients_inventory(user_id, inventory_changes)
+        return {"success": True, "updated": inventory_changes}
+    except Exception as e:
+        print("ERROR:", e)
+        raise HTTPException(status_code=500, detail=f"Failed to update inventory: {str(e)}")

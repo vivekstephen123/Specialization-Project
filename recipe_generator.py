@@ -89,15 +89,33 @@ def update_ingredients_inventory(user_id, inventory_changes):
     Deletes the ingredient if quantity becomes 0.
     inventory_changes: list of dicts like {"ingredient": "Carrot", "quantity": 2}
     """
+    if not isinstance(inventory_changes, list):
+        print("inventory_changes is not a list:", inventory_changes)
+        return
     for change in inventory_changes:
+        print("CHANGE ITEM:", change)
+        if not isinstance(change, dict) or "ingredient" not in change or "quantity" not in change:
+            print("Skipping invalid change item:", change)
+            continue
         name = change["ingredient"].strip().title()
-        new_qty = int(change["quantity"])
-        print(f"Updating {name} for user {user_id} to quantity {new_qty}")  # Debug print
+        try:
+            new_qty = int(change["quantity"])
+        except Exception as e:
+            print(f"Invalid quantity for {name}: {change['quantity']}. Error: {e}")
+            continue
+        print(f"Setting {name} for user {user_id} to quantity {new_qty}")  # Debug print
         if new_qty > 0:
-            response = supabase.table('Ingredients Inventory').update({'Quantity': new_qty}).eq('user_id', user_id).eq('Name', name).execute()
-            print(response)  # Debug print
+            response = supabase.table('Ingredients Inventory') \
+                .update({'Quantity': new_qty}) \
+                .eq('user_id', user_id) \
+                .eq('Name', name) \
+                .execute()
+            print("Update response:", response)
         else:
-            # Delete the ingredient if quantity is 0
-            response = supabase.table('Ingredients Inventory').delete().eq('user_id', user_id).eq('Name', name).execute()
-            print(f"Deleted {name} for user {user_id}")  # Debug print
-            print(response)
+            response = supabase.table('Ingredients Inventory') \
+                .delete() \
+                .eq('user_id', user_id) \
+                .eq('Name', name) \
+                .execute()
+            print(f"Deleted {name} for user {user_id}")
+            print("Delete response:", response)
