@@ -51,8 +51,3 @@ async def detect_ingredient(image: UploadFile = File(...)):
     detected_ingredient = "Tomato"
 
     return {"detected_ingredient": detected_ingredient}
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab

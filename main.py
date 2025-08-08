@@ -1,8 +1,5 @@
-<<<<<<< HEAD
-from fastapi import FastAPI, HTTPException
-=======
-from fastapi import FastAPI, HTTPException, Body
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
+from typing import Optional
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from auth import signup_user, login_user
 from inventory import router as inventory_router
@@ -11,10 +8,11 @@ import json
 import logging
 import google.generativeai as genai
 from supabase_client import supabase
-<<<<<<< HEAD
 import os
 from bill_extract import BillItemExtractor
 from dotenv import load_dotenv
+import tempfile
+
 
 # Load environment variables from .env
 load_dotenv()
@@ -23,38 +21,22 @@ load_dotenv()
 
 app = FastAPI()
 app.include_router(inventory_router)
-API_KEY = os.getenv('GEMINI_API_KEY')
+API_KEY = os.getenv('GEMINI_API')
 if not API_KEY:
     raise RuntimeError("❌ GEMINI_API_KEY not found in .env")
 # Gemini API configuration
 genai.configure(api_key=API_KEY)
-=======
-from recipe_generator import update_ingredients_inventory
-
-app = FastAPI()
-app.include_router(inventory_router)
-
-# Gemini API configuration
-genai.configure(api_key="AIzaSyDGKB4D6OEaQNiqUFdGtljNobAFXPi4omw")
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 class SignupRequest(BaseModel):
     username: str
     password: str
-<<<<<<< HEAD
     email: str
-=======
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
     preferences: str = None
     diet_plan: str = None
 
 class LoginRequest(BaseModel):
-<<<<<<< HEAD
     email: str
-=======
-    username: str
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
     password: str
 
 from enum import Enum
@@ -142,8 +124,6 @@ Respond in valid JSON format like:
     except json.JSONDecodeError:
         return {"error": "Invalid JSON returned by Gemini", "raw_response": response.text}
 
-<<<<<<< HEAD
-=======
 def parse_inventory_changes(inventory_changes):
     # If it's a string, try to parse as JSON (possibly double-encoded)
     if isinstance(inventory_changes, str):
@@ -163,16 +143,12 @@ def parse_inventory_changes(inventory_changes):
         raise HTTPException(status_code=500, detail="Inventory changes is not a list!")
     return inventory_changes
 
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
 # Existing routes
 @app.post("/signup/")
 async def signup(request: SignupRequest):
     result = await signup_user(
         username=request.username,
-<<<<<<< HEAD
         email=request.email,
-=======
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
         password=request.password,
         preferences=request.preferences,
         diet_plan=request.diet_plan
@@ -186,11 +162,7 @@ async def signup(request: SignupRequest):
 
 @app.post("/login/")
 async def login(request: LoginRequest):
-<<<<<<< HEAD
     user = await login_user(email=request.email, password=request.password)
-=======
-    user = await login_user(username=request.username, password=request.password)
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
     if user:
         return {
             "access_token": user["access_token"],
@@ -204,12 +176,6 @@ async def login(request: LoginRequest):
 async def generate_recipe_endpoint(request: RecipeRequest):
     try:
         recipe = generate_recipe(request.user_id, request.meal_type)
-<<<<<<< HEAD
-        
-        if "error" in recipe:
-            raise HTTPException(status_code=400, detail=recipe["error"])
-        
-=======
         print("RECIPE:", recipe)
         if "error" in recipe:
             raise HTTPException(status_code=400, detail=recipe["error"])
@@ -223,30 +189,17 @@ async def generate_recipe_endpoint(request: RecipeRequest):
                 inventory_changes = parse_inventory_changes(inventory_changes_raw)
             print("PARSED INVENTORY CHANGES:", inventory_changes)
             update_ingredients_inventory(request.user_id, inventory_changes)
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
         return {
             "success": True,
             "recipe": recipe
         }
     except Exception as e:
-<<<<<<< HEAD
-=======
         print("ERROR:", e)
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
         raise HTTPException(status_code=500, detail=f"Failed to generate recipe: {str(e)}")
 
 # Optional: GET route for recipe generation (if you prefer GET with query params)
 @app.get("/generate-recipe/{user_id}")
 async def generate_recipe_get(user_id: str, meal_type: MealType = MealType.lunch):
-<<<<<<< HEAD
-    print("here")
-    try:
-        recipe = generate_recipe(user_id, meal_type)
-        
-        if "error" in recipe:
-            raise HTTPException(status_code=400, detail=recipe["error"])
-        
-=======
     try:
         recipe = generate_recipe(user_id, meal_type)
         if "error" in recipe:
@@ -255,7 +208,6 @@ async def generate_recipe_get(user_id: str, meal_type: MealType = MealType.lunch
             inventory_changes = parse_inventory_changes(recipe["post_meal_inventory_change"])
             print("PARSED INVENTORY CHANGES:", inventory_changes)
             update_ingredients_inventory(user_id, inventory_changes)
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
         return {
             "success": True,
             "recipe": recipe
@@ -263,7 +215,6 @@ async def generate_recipe_get(user_id: str, meal_type: MealType = MealType.lunch
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate recipe: {str(e)}")
 
-<<<<<<< HEAD
 @app.get("/fetch-user/{user_id}")
 async def fetch_user(user_id: str):
     response = supabase.table('CustomUsers').select("*").eq('user_id', user_id).execute()
@@ -324,18 +275,3 @@ async def extract_bill_upload_endpoint(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process bill: {str(e)}")
-=======
-@app.post("/update-inventory/{user_id}")
-async def update_inventory_endpoint(user_id: str, inventory_changes: list = Body(...)):
-    """
-    Update the Ingredients Inventory for a user.
-    Expects a JSON body: [{"ingredient": "Carrot", "quantity": 2}, ...]
-    """
-    try:
-        print("Received inventory changes:", inventory_changes)
-        update_ingredients_inventory(user_id, inventory_changes)
-        return {"success": True, "updated": inventory_changes}
-    except Exception as e:
-        print("ERROR:", e)
-        raise HTTPException(status_code=500, detail=f"Failed to update inventory: {str(e)}")
->>>>>>> 74f98d17a21d534d240901ab78b96e259745b7ab
