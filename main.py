@@ -7,12 +7,22 @@ import json
 import logging
 import google.generativeai as genai
 from supabase_client import supabase
+import os
+from bill_extract import BillItemExtractor
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
+
+
 
 app = FastAPI()
 app.include_router(inventory_router)
-
+API_KEY = os.getenv('GEMINI_API_KEY')
+if not API_KEY:
+    raise RuntimeError("❌ GEMINI_API_KEY not found in .env")
 # Gemini API configuration
-genai.configure(api_key="AIzaSyDGKB4D6OEaQNiqUFdGtljNobAFXPi4omw")
+genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 class SignupRequest(BaseModel):
@@ -180,3 +190,55 @@ async def fetch_user(user_id: str):
         return {"user": response.data[0]}
     else:
         return {"message": "User not found."}
+    
+# Initialize extractor
+bill_extractor = BillItemExtractor(API_KEY)
+
+def extract_bill_items(image_path: str, user_id: Optional[str] = None):
+    """
+    Extract items from a bill image and return parsed result.
+    """
+    try:
+        json_result = bill_extractor.extract_and_format(image_path)
+        return json.loads(json_result)
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Extraction error: {str(e)}",
+            "items": [],
+            "total_items": 0
+        }
+
+@app.post("/extract-bill-upload/")
+async def extract_bill_upload_endpoint(
+    file: UploadFile = File(...),
+    user_id: Optional[str] = None
+):
+    try:
+        # Validate file type
+        if not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Invalid file type. Upload an image.")
+
+        # Save the uploaded image to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            temp_file.write(await file.read())
+            temp_file_path = temp_file.name
+
+        try:
+            # Extract bill items
+            result = extract_bill_items(temp_file_path, user_id)
+
+            if not result.get("success"):
+                raise HTTPException(status_code=400, detail=result.get("error", "Extraction failed"))
+
+            return result
+
+        finally:
+            # Delete temp file
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process bill: {str(e)}")
