@@ -27,7 +27,8 @@ def fetch_ingredients_for_user(user_id):
     return ", ".join(ingredients_list)
 
 def fetch_user_profile(user_id):
-    response = supabase.table('UserProfiles').select("*").eq('user_id', user_id).execute()
+    print("HERE")
+    response = supabase.table('CustomUsers').select("*").eq('user_id', user_id).execute()
     if response.data:
         return response.data[0]
     return {}
@@ -36,6 +37,7 @@ def generate_recipe(user_id):
     print("HERE")
     ingredients_string = fetch_ingredients_for_user(user_id)
     user_profile = fetch_user_profile(user_id)
+    print(user_profile)
     preferences = user_profile.get("preferences", "")
     diet_plan = user_profile.get("diet_plan", "")
 
