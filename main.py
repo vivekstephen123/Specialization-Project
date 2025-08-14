@@ -59,8 +59,6 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
-from enum import Enum
-
 class MealType(str, Enum):
     breakfast = "breakfast"
     lunch = "lunch"
@@ -70,9 +68,13 @@ class RecipeRequest(BaseModel):
     user_id: str
     meal_type: MealType
 
+class InventoryUpdateItem(BaseModel):
+    quantity: float
+    units: str
+
 class UpdateInventoryRequest(BaseModel):
     user_id: str
-    updated_inventory: Dict[str, int]  # {"ingredient_name": new_quantity, ...}
+    updated_inventory: Dict[str, InventoryUpdateItem]  # {"ingredient_name": {"quantity": new_quantity, "units": "g"}}
 
 # Recipe generator functions
 def clean_json_response(text):
@@ -84,7 +86,8 @@ def fetch_ingredients_for_user(user_id):
     response = supabase.table('Ingredients Inventory').select("*").eq('user_id', user_id).execute()
     ingredients_list = []
     for item in response.data:
-        ingredient = f"{item['Quantity']} of {item['Name']}"
+        # Format: "Quantity Units of Name"
+        ingredient = f"{item['Quantity']} {item['Units']} of {item['Name']}"
         ingredients_list.append(ingredient)
     return ", ".join(ingredients_list)
 
@@ -159,56 +162,49 @@ Respond in valid JSON format like:
     except json.JSONDecodeError:
         return {"error": "Invalid JSON returned by Gemini", "raw_response": response.text}
 
-def update_ingredients_inventory(user_id: str, updated_inventory: Dict[str, int]):
+def update_ingredients_inventory(user_id: str, updated_inventory: Dict[str, InventoryUpdateItem]):
     """
-    Updates the Ingredients Inventory table with new quantities.
+    Updates the Ingredients Inventory table with new quantities and units.
     Only updates ingredients that exist in the user's current inventory.
     Will NOT delete ingredients when quantity is 0 — instead, keeps them with 0 quantity.
-    
     Args:
         user_id: User ID
-        updated_inventory: Dict with ingredient names as keys and new quantities as values
+        updated_inventory: Dict with ingredient names as keys and InventoryUpdateItem as values
     """
-    # First, get the current inventory for this user
     current_inventory_response = supabase.table('Ingredients Inventory').select("*").eq('user_id', user_id).execute()
     
     if not current_inventory_response.data:
         print(f"No current inventory found for user {user_id}")
         return {"updated": 0, "skipped": len(updated_inventory), "errors": []}
     
-    # Create a mapping of ingredient names in the database (case-insensitive)
     current_ingredients = {}
     for item in current_inventory_response.data:
-        current_ingredients[item['Name'].lower()] = item['Name']  # lowercase key -> actual name
+        current_ingredients[item['Name'].lower()] = item['Name']
     
     updated_count = 0
     skipped_count = 0
     errors = []
     
-    for ingredient_name, new_quantity in updated_inventory.items():
+    for ingredient_name, update_info in updated_inventory.items():
         ingredient_name_lower = ingredient_name.strip().lower()
-        
-        # Check if ingredient exists in current inventory (case-insensitive)
         if ingredient_name_lower not in current_ingredients:
             print(f"Ingredient '{ingredient_name}' not found in user's inventory. Skipping.")
             skipped_count += 1
             continue
         
-        # Get the actual ingredient name as stored in database
         actual_ingredient_name = current_ingredients[ingredient_name_lower]
         
         try:
-            new_qty = int(new_quantity)
-            
-            # Always update quantity, even if it's 0
+            new_qty = float(update_info.quantity)
+            new_units = update_info.units
             response = supabase.table('Ingredients Inventory') \
-                .update({'Quantity': new_qty}) \
+                .update({'Quantity': new_qty, 'Units': new_units}) \
                 .eq('user_id', user_id) \
                 .eq('Name', actual_ingredient_name) \
                 .execute()
             
             if response.data:
-                print(f"Updated {actual_ingredient_name} for user {user_id} to quantity {new_qty}")
+                print(f"Updated {actual_ingredient_name} for user {user_id} to quantity {new_qty} {new_units}")
                 updated_count += 1
             else:
                 error_msg = f"Failed to update {actual_ingredient_name}"
@@ -216,7 +212,7 @@ def update_ingredients_inventory(user_id: str, updated_inventory: Dict[str, int]
                 errors.append(error_msg)
 
         except ValueError as e:
-            error_msg = f"Invalid quantity for {ingredient_name}: {new_quantity}. Error: {e}"
+            error_msg = f"Invalid quantity for {ingredient_name}: {update_info.quantity}. Error: {e}"
             print(error_msg)
             errors.append(error_msg)
         except Exception as e:
